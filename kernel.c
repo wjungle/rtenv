@@ -318,18 +318,65 @@ void serial_readwrite_task()
 {
 	int fdout, fdin;
 	char str[100];
+	char str_cmd[100];
 	char ch;
 	int curr_char;
-	int done;
+	int cmd_char = 0;
+	int done, start=1;
+	char *prompt = "rtenv> ";
 
 	fdout = mq_open("/tmp/mqueue/out", 0);
 	fdin = open("/dev/tty0/in", 0);
 
 	/* Prepare the response message to be queued. */
-	memcpy(str, "Got:", 4);
+	//memcpy(str, "Got:", 4);
+	
+#if 1
+	while(1)
+	{
+		if(start == 1)
+			puts(prompt), start = 0;
+		
+		read(fdin, &ch, 1);
+		switch(ch)
+		{
+			case '\r':
+			case '\n':
+				str[cmd_char] = '\n';
+				str[cmd_char+1] = '\0';
+				puts("\r\n");
+				start = 1;
+				break;
+			case '\b':
+				//send_byte('\b');
+				break;
+			default:
+				str[cmd_char++] = ch;
+				send_byte(ch);
+				break;
+		}
+		cmd_char = 0;
+		//puts(str);
+		if(strcmp("help\n\0", str) == 0){
+			puts("This is a very simple shell\r\n");
+			puts("following is funcution menu\r\n");
+			puts("help  - This function of this shell.\r\n");
+			puts("ps    - Report a snapshop of the current processes.\r\n");
+			puts("echo  - Display a line of text.\r\n");
+		}
+		else if(strcmp("ps\n\0", str) == 0)
+		{
+		}
+		else if(strcmp("echo\n\0", str) == 0)
+		{
+		}
+		
+	}
 
+#endif
+#if 0
 	while (1) {
-		curr_char = 4;
+		curr_char = 7;
 		done = 0;
 		do {
 			/* Receive a byte from the RS232 port (this call will
@@ -356,7 +403,18 @@ void serial_readwrite_task()
 		 */
 		write(fdout, str, curr_char+1+1);
 	}
+#endif
 }
+
+void send_byte(uint8_t b)
+{
+    /* Send one byte */
+    USART_SendData(USART2, b);
+
+    /* Loop until USART2 DR register is empty */
+    while(USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET);
+}
+
 
 void first()
 {
@@ -366,8 +424,8 @@ void first()
 	if (!fork()) setpriority(0, 0), serialout(USART2, USART2_IRQn);
 	if (!fork()) setpriority(0, 0), serialin(USART2, USART2_IRQn);
 	if (!fork()) rs232_xmit_msg_task();
-	if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), queue_str_task1();
-	if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), queue_str_task2();
+	//if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), queue_str_task1();
+	//if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), queue_str_task2();
 	if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), serial_readwrite_task();
 
 	setpriority(0, PRIORITY_LIMIT);
