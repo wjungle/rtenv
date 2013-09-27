@@ -266,6 +266,8 @@ void echo()
 	}
 }
 
+
+
 void rs232_xmit_msg_task()
 {
 	int fdout, fdin;
@@ -314,67 +316,177 @@ void queue_str_task2()
 	queue_str_task("Hello 2\n", 50);
 }
 
-void serial_readwrite_task()
+
+void clear_console(int fdout, int num_char)
+{
+
+	while(num_char-- != 0)
+	{
+		prints("\b");
+		prints(" ");
+		prints("\b");
+	}
+}
+
+
+/*	For determine the input of user, up, down, right or left
+*	fdout: output to the tty
+*	dir: determint direction
+*	cmd_idx: 
+*	cmd_cnt: for history function, used for up & down key
+*	str[][100]: for history function 
+*/
+
+int direction(int fdout, char dir, int cmd_idx, int cmd_cnt, char str[][100])
+{
+	switch(dir)
+	{
+		case 65:		//up
+			if(cmd_cnt == 0)
+				break;
+			else{
+				if(cmd_idx > 0){
+					clear_console(fdout, cmd_idx);
+					cmd_idx-=cmd_idx;
+					if(cmd_idx<0) cmd_idx=0;
+					prints(str[cmd_cnt]);
+					return cmd_idx;
+					break;
+				}
+			}	
+		case 66:		//down
+		case 67:		//right
+		case 68:		//left
+			break;
+	}
+}
+
+void prints(char string[])
+{
+	int fdout, i;
+	
+ 	i = 0;
+	fdout= open("/dev/tty0/out", 0);
+
+	while(string[i] != '\0'){
+		write(fdout, &string[i], 1);
+		i++;
+	}
+}
+#if 0
+char console_read(int fdin)
+{
+	char ch;
+
+	read(fdin, &ch, 1);
+	if
+}
+#endif
+
+void determine_cmd(char str[], char str_hsty[][100])
+{		
+	int i;
+	if(strcmp("help", str) == 0){
+		puts("This is a very simple shell\r\n");
+		puts("following is funcution menu\r\n");
+		puts("help - This function of this shell.\r\n");
+		puts("history - Report command before.\r\n");
+		puts("echo  - Display a line of text.\r\n");
+	}
+	else if(strcmp("ps\n\0", str) == 0)
+	{
+	}
+	else if(strcmp("echo\n\0", str) == 0)
+	{
+	}
+	else if(strcmp("history", str) == 0)
+	{
+		for(i=0; i<10; i++){
+				if(str_hsty[i][1] !=0){
+					prints(str_hsty[i]);
+					prints("\r\n");
+				}
+		}
+	}
+}
+
+void my_shell()
 {
 	int fdout, fdin;
 	char str[100];
-	char str_cmd[100];
-	char ch;
-	int curr_char;
-	int cmd_char = 0;
-	int done, start=1;
+	char cmd_hsty[10][100] = {0};		// command history
+	char ch, dir[2];
+	int cmd_cnt = -1, cmd_idx = 0;
+	int start = 1, i=0, curr_flg=0;
 	char *prompt = "rtenv> ";
 
-	fdout = mq_open("/tmp/mqueue/out", 0);
-	fdin = open("/dev/tty0/in", 0);
+    fdout = open("/dev/tty0/out", 0);
+	fdin  = open("/dev/tty0/in", 0);
 
-	/* Prepare the response message to be queued. */
-	//memcpy(str, "Got:", 4);
-	
-#if 1
 	while(1)
 	{
-		if(start == 1)
-			puts(prompt), start = 0;
-		
+		if(start == 1){
+			puts(prompt); 
+			cmd_idx = 0;
+			start = 0;
+		}
+				
 		read(fdin, &ch, 1);
 		switch(ch)
 		{
 			case '\r':
 			case '\n':
-				str[cmd_char] = '\n';
-				str[cmd_char+1] = '\0';
+				str[cmd_idx] = '\0';
+				//str[cmd_idx+1] = '\0';
+				memcpy(cmd_hsty[(++cmd_cnt)%10], str, strlen(str));
+				//prints(cmd_hsty[cmd_cnt%10]);	/*for debug*/
 				puts("\r\n");
 				start = 1;
+				determine_cmd(str, cmd_hsty);
 				break;
-			case '\b':
-				//send_byte('\b');
+			//case '\b':
+			case 27:			//up, down, left, right
+				read(fdin, &dir, 2);
+				if(dir[0] == 91){
+					//puts("read direction!");
+					cmd_idx = direction(fdout, dir[1], cmd_idx, cmd_cnt, cmd_hsty);
+				}
+				break;
+			case 0x7f:
+				if(cmd_idx-- > 0)
+					clear_console(fdout, 1);
 				break;
 			default:
-				str[cmd_char++] = ch;
-				send_byte(ch);
+				if(cmd_idx <= 98)
+					 str[cmd_idx++] = ch;
+				else{
+					str[cmd_idx] = '\n';
+					str[cmd_idx+1] = '\0';
+					puts("\r\n");
+					start = 1;	
+					//read(fdin, &ch, 1);
+					break;
+				}
+				write(fdout, &ch, 1);
 				break;
 		}
-		cmd_char = 0;
-		//puts(str);
-		if(strcmp("help\n\0", str) == 0){
-			puts("This is a very simple shell\r\n");
-			puts("following is funcution menu\r\n");
-			puts("help  - This function of this shell.\r\n");
-			puts("ps    - Report a snapshop of the current processes.\r\n");
-			puts("echo  - Display a line of text.\r\n");
-		}
-		else if(strcmp("ps\n\0", str) == 0)
-		{
-		}
-		else if(strcmp("echo\n\0", str) == 0)
-		{
-		}
-		
 	}
+}
 
-#endif
-#if 0
+void serial_readwrite_task()
+{
+	int fdout, fdin;
+	char str[100];
+	char ch;
+	int curr_char;
+	int done;
+
+	fdout = mq_open("/tmp/mqueue/out", 0);
+	fdin = open("/dev/tty0/in", 0);
+
+	/* Prepare the response message to be queued. */
+	memcpy(str, "Got:", 4);
+	
 	while (1) {
 		curr_char = 7;
 		done = 0;
@@ -403,16 +515,6 @@ void serial_readwrite_task()
 		 */
 		write(fdout, str, curr_char+1+1);
 	}
-#endif
-}
-
-void send_byte(uint8_t b)
-{
-    /* Send one byte */
-    USART_SendData(USART2, b);
-
-    /* Loop until USART2 DR register is empty */
-    while(USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET);
 }
 
 
@@ -426,7 +528,9 @@ void first()
 	if (!fork()) rs232_xmit_msg_task();
 	//if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), queue_str_task1();
 	//if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), queue_str_task2();
-	if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), serial_readwrite_task();
+	//if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), serial_readwrite_task();
+	//if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), greeting();
+	if (!fork()) setpriority(0, PRIORITY_DEFAULT - 10), my_shell();
 
 	setpriority(0, PRIORITY_LIMIT);
 
